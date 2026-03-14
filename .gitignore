@@ -1,0 +1,9 @@
+*.pth
+*.pt
+*.nii.gz
+*.nrrd
+*.pyc
+split_*.txt
+event_*.txt
+settings.json
+events.out.tfevents.*
