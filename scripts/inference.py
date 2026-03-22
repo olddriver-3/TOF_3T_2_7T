@@ -5,6 +5,8 @@ import torch
 import numpy as np
 from tqdm import tqdm
 import ants
+import time
+import pickle
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -13,10 +15,10 @@ from models.generator import UNet3DGenerator
 
 
 class InferenceEngine:
-    def __init__(self, config, checkpoint_path=None):
+    def __init__(self, config, checkpoint_path=None, histogram_path=None):
         self.config = config
         self.device = config.device
-        
+        print(self.device)
         self.model = UNet3DGenerator(
             in_channels=config.in_channels,
             out_channels=config.out_channels,
@@ -29,6 +31,10 @@ class InferenceEngine:
             self.load_checkpoint(checkpoint_path)
         
         self.model.eval()
+        
+        self.reference_histogram = None
+        if histogram_path:
+            self.load_histogram(histogram_path)
     
     def load_checkpoint(self, path):
         checkpoint = torch.load(path, map_location=self.device)
@@ -47,6 +53,36 @@ class InferenceEngine:
         
         print(f"Loaded checkpoint from: {path}")
     
+    def load_histogram(self, path):
+        with open(path, 'rb') as f:
+            histogram_data = pickle.load(f)
+        self.reference_histogram = histogram_data['histogram']
+        print(f"Loaded reference histogram from: {path}")
+    
+    def histogram_matching(self, source, reference):
+        source_flat = source.flatten()
+        reference_flat = reference.flatten()
+        
+        source_values, source_indices, source_counts = np.unique(
+            source_flat, return_inverse=True, return_counts=True
+        )
+        
+        reference_values, reference_counts = np.unique(
+            reference_flat, return_counts=True
+        )
+        
+        source_quantiles = np.cumsum(source_counts).astype(np.float64)
+        source_quantiles /= source_quantiles[-1]
+        
+        reference_quantiles = np.cumsum(reference_counts).astype(np.float64)
+        reference_quantiles /= reference_quantiles[-1]
+        
+        interp_source_values = np.interp(source_quantiles, reference_quantiles, reference_values)
+        
+        matched = interp_source_values[source_indices]
+        
+        return matched.reshape(source.shape)
+    
     def load_volume(self, filepath):
         img = ants.image_read(filepath)
         data = img.numpy().astype(np.float32)
@@ -56,7 +92,7 @@ class InferenceEngine:
         data_min = data.min()
         data_max = data.max()
         if data_max - data_min > 0:
-            data = (data - data_min) / (data_max - data_min) * 255.0
+            data = (data - data_min) / (data_max - data_min)
         return data
     
     def extract_patches(self, volume, patch_size, stride):
@@ -114,7 +150,7 @@ class InferenceEngine:
         return output
     
     @torch.inference_mode()
-    def infer_volume(self, volume, batch_size=16):
+    def infer_volume(self, volume, batch_size=1):
         D, H, W = volume.shape
         patch_size = self.config.patch_size
         stride = self.config.stride
@@ -129,12 +165,14 @@ class InferenceEngine:
         
         for i in tqdm(range(0, num_patches, batch_size), desc='Processing batches'):
             batch_tensor = patches_tensor[i:i+batch_size]
-            
             output, uncertainty = self.model(batch_tensor)
-            
-            output_patches.append(output.cpu().numpy())
-            uncertainty_patches.append(uncertainty.cpu().numpy())
+            output_patches.append(output)
+            uncertainty_patches.append(uncertainty)
         
+        # 将所有结果从GPU转移到CPU
+        output_patches = [op.cpu().numpy() for op in output_patches]
+        uncertainty_patches = [up.cpu().numpy() for up in uncertainty_patches]
+
         output_patches = np.concatenate(output_patches, axis=0).squeeze(1)
         uncertainty_patches = np.concatenate(uncertainty_patches, axis=0).squeeze(1)
         
@@ -160,8 +198,19 @@ class InferenceEngine:
         print(f"Volume shape: {volume.shape}")
         
         volume = self.normalize(volume)
-        
+        print(f"volume.max(): {volume.max()}")
+        print(f"volume.min(): {volume.min()}")
         output, uncertainty = self.infer_volume(volume)
+        
+        if self.reference_histogram is not None:
+            print("Applying histogram matching...")
+            reference_data = np.random.choice(
+                np.arange(256), 
+                size=output.size, 
+                p=self.reference_histogram / self.reference_histogram.sum()
+            ).reshape(output.shape).astype(np.float32)
+            output = self.histogram_matching(output, reference_data)
+            print("Histogram matching completed")
         
         if output_path is None:
             input_dir = os.path.dirname(input_path)
@@ -194,11 +243,14 @@ class InferenceEngine:
             elif name.endswith('.nii'):
                 name = name[:-4]
             
-            output_path = os.path.join(output_dir, f'{name}_7t_like.nii.gz')
-            uncertainty_path = os.path.join(output_dir, f'{name}_uncertainty.nii.gz')
+            # 为每个文件创建独立的子文件夹
+            file_output_dir = os.path.join(output_dir, name)
+            os.makedirs(file_output_dir, exist_ok=True)
+            
+            output_path = os.path.join(file_output_dir, f'{name}_7t_like.nii.gz')
+            uncertainty_path = os.path.join(file_output_dir, f'{name}_uncertainty.nii.gz')
             
             self.infer_file(input_path, output_path, uncertainty_path)
-
 
 def main():
     parser = argparse.ArgumentParser(description='Inference for AU-MIPGAN')
@@ -213,7 +265,9 @@ def main():
     parser.add_argument('--mode', type=str, default='file', choices=['file', 'dir'],
                         help='Inference mode: file or directory')
     parser.add_argument('--gpu', type=str, default='0',
-                        help='GPU ID to use (e.g., 0, 1, 0,1 for multiple GPUs)')
+                        help='GPU ID to use (e.g. 0, 1, 0,1 for multiple GPUs)')
+    parser.add_argument('--histogram', type=str, default=None,
+                        help='Path to reference histogram file for histogram matching')
     args = parser.parse_args()
     
     config = Config()
@@ -228,7 +282,7 @@ def main():
             if not key.startswith('_'):
                 setattr(config, key, value)
     
-    engine = InferenceEngine(config, args.checkpoint)
+    engine = InferenceEngine(config, args.checkpoint, args.histogram)
     
     if args.mode == 'file':
         engine.infer_file(args.input, args.output)

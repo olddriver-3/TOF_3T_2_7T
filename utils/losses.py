@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 class GANLoss(nn.Module):
-    def __init__(self, use_lsgan=True):
+    def __init__(self, use_lsgan=False):
         super(GANLoss, self).__init__()
         if use_lsgan:
             self.loss = nn.MSELoss()

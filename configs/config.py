@@ -3,9 +3,9 @@ import torch
 
 class Config:
     def __init__(self):
-        self.project_root = r'/server03_data/LYH/TOF_3T_2_7T_new'
+        self.project_root = r''
         
-        self.data_dir = os.path.join(self.project_root, 'data')
+        self.data_dir = os.path.join(self.project_root, 'data_registered')
         self.train_3t_dir = os.path.join(self.data_dir, 'train', '3T')
         self.train_7t_dir = os.path.join(self.data_dir, 'train', '7T')
         self.val_3t_dir = os.path.join(self.data_dir, 'val', '3T')

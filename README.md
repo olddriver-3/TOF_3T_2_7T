@@ -5,15 +5,17 @@
 ## 项目概述
 
 本项目实现了一个用于从3T TOF-MRA图像生成7T-like图像的深度学习模型。模型采用两阶段训练策略：
+
 1. **Stage 1**: 训练三个教师模型，分别学习轴向、冠状和矢状方向的MIP特征
 2. **Stage 2**: 通过知识蒸馏训练学生模型，融合多方向MIP信息
 
 ## 环境配置
 
 ### 系统要求
-- Python 3.7+
-- CUDA 10.2+ (推荐)
-- GPU内存: 建议24GB以上 (支持多GPU训练)
+
+- Python 3.12
+- CUDA 12.5 (推荐)
+- GPU内存: 33GB以上
 
 ### 安装依赖
 
@@ -22,19 +24,21 @@ pip install -r requirements.txt
 ```
 
 主要依赖包：
+
 - torch >= 1.9.0
 - nibabel >= 3.2.0 (NIfTI文件处理)
 - scipy >= 1.5.0
 - tensorboard >= 2.5.0
 - tqdm >= 4.50.0
 
----
+***
 
 ## 数据准备
 
 ### 1. 数据格式要求
 
 支持的数据格式：
+
 - NIfTI格式 (`.nii` 或 `.nii.gz`) - 推荐格式
 - NRRD格式 (`.nrrd`) - 原始数据格式，需要预处理转换
 
@@ -49,7 +53,7 @@ pip install -r requirements.txt
 - 可选的偏置场校正 (N4ITK)
 - 可选的颅骨去除
 - 重采样到统一大小 (默认512×512×320)
-- 强度归一化到 [0, 255]
+- 强度归一化到 \[0, 255]
 - 自动划分训练/验证/测试集
 - 输出为NIfTI格式
 
@@ -74,18 +78,18 @@ python scripts/preprocess_data.py \
 
 #### 2.3 预处理参数说明
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `--input_dir` | origin_nrrd_data | 输入NRRD数据目录 |
-| `--output_dir` | data | 输出目录 |
-| `--target_shape` | 512 512 320 | 重采样目标大小 |
-| `--no_registration` | - | 跳过刚性配准 |
-| `--no_bias_correction` | - | 跳过偏置场校正 |
-| `--skull_stripping` | - | 启用颅骨去除 |
-| `--train_ratio` | 0.7 | 训练集比例 |
-| `--val_ratio` | 0.1 | 验证集比例 |
-| `--test_ratio` | 0.2 | 测试集比例 |
-| `--seed` | 42 | 随机种子 |
+| 参数                     | 默认值                | 说明         |
+| ---------------------- | ------------------ | ---------- |
+| `--input_dir`          | origin\_nrrd\_data | 输入NRRD数据目录 |
+| `--output_dir`         | data               | 输出目录       |
+| `--target_shape`       | 512 512 320        | 重采样目标大小    |
+| `--no_registration`    | -                  | 跳过刚性配准     |
+| `--no_bias_correction` | -                  | 跳过偏置场校正    |
+| `--skull_stripping`    | -                  | 启用颅骨去除     |
+| `--train_ratio`        | 0.7                | 训练集比例      |
+| `--val_ratio`          | 0.1                | 验证集比例      |
+| `--test_ratio`         | 0.2                | 测试集比例      |
+| `--seed`               | 42                 | 随机种子       |
 
 #### 2.4 原始数据目录结构要求
 
@@ -107,7 +111,9 @@ origin_nrrd_data/
 如果需要手动进行预处理，请参考以下步骤：
 
 #### 3.1 图像配准
+
 将7T图像刚性配准到对应的3T图像：
+
 ```python
 # 推荐使用ANTs或FSL进行配准
 # 示例使用ANTs:
@@ -115,7 +121,9 @@ antsRegistrationSyN.sh -d 3 -f 3T_image.nii -m 7T_image.nii -o output_
 ```
 
 #### 2.2 偏置场校正
+
 对图像进行偏置场校正：
+
 ```python
 # 使用N4ITK (ITK/SimpleITK)
 import SimpleITK as sitk
@@ -127,7 +135,9 @@ sitk.WriteImage(output_image, "corrected_image.nii")
 ```
 
 #### 2.3 颅骨去除
+
 移除颅骨和非脑组织：
+
 ```python
 # 推荐使用HD-BET或FSL BET
 # 使用HD-BET:
@@ -135,7 +145,9 @@ sitk.WriteImage(output_image, "corrected_image.nii")
 ```
 
 #### 2.4 重采样和裁剪
+
 统一图像矩阵大小以减少计算成本：
+
 ```python
 import nibabel as nib
 from scipy.ndimage import zoom
@@ -152,7 +164,9 @@ resampled = zoom(data, zoom_factors, order=1)
 ```
 
 #### 2.5 强度归一化
-将图像强度归一化到 [0, 255] 范围：
+
+将图像强度归一化到 \[0, 255] 范围：
+
 ```python
 import numpy as np
 
@@ -196,18 +210,14 @@ data/
 ```
 
 **重要说明**：
+
 - 3T和7T目录中的文件名必须一一对应
 - 同一受试者的3T和7T图像文件名必须相同
 - 训练集、验证集、测试集的受试者不应重叠
 
-### 4. 数据集划分建议
+<br />
 
-参考论文的数据划分：
-- 训练集: 32对 3T-7T 图像
-- 验证集: 8对 3T-7T 图像
-- 测试集: 20对 3T-7T 图像
-
-### 5. 创建测试数据 (可选)
+### 4. 创建测试数据 (可选)
 
 如果需要测试代码，可以创建随机数据：
 
@@ -215,7 +225,7 @@ data/
 python setup.py --create_data
 ```
 
----
+***
 
 ## 模型训练
 
@@ -289,6 +299,7 @@ python main.py train_teacher --direction coronal --gpu 1
 #### 教师模型检查点
 
 训练完成后，检查点保存在：
+
 ```
 checkpoints/
 ├── teacher_axial/
@@ -325,6 +336,7 @@ python main.py train_student \
 #### 学生模型检查点
 
 训练完成后，检查点保存在：
+
 ```
 checkpoints/
 └── student/
@@ -360,9 +372,86 @@ tensorboard --logdir logs/teacher_sagittal
 tensorboard --logdir logs/student
 ```
 
----
+***
 
 ## 模型推理
+
+### 推理预处理Pipeline
+
+对于陌生的3T数据，需要先进行预处理以符合模型输入要求。`inference_preprocess_pipeline.py` 提供了完整的预处理流程：
+
+#### 预处理步骤
+
+1. N4偏置场校正
+2. 颅骨去除
+3. 重采样到目标分辨率
+4. 裁剪或填充到指定形状
+5. 强度归一化到 \[0, 255]
+
+#### 使用方法
+
+```python
+from scripts.inference_preprocess_pipeline import preprocess_3t_for_inference
+import nibabel as nib
+
+# 加载原始3T数据
+nii = nib.load('subject_001_3t.nii.gz')
+data_3t = nii.get_fdata()
+spacing = nii.header.get_zooms()[:3]
+origin = nii.affine[:3, 3]
+direction = nii.affine[:3, :3].T.flatten()
+
+# 预处理
+processed, metadata = preprocess_3t_for_inference(
+    data_3t,
+    spacing=spacing,
+    origin=origin,
+    direction=direction,
+    target_shape=(512, 512, 320),
+    target_resolution=(0.4, 0.4, 0.4)
+)
+```
+
+#### 参数说明
+
+| 参数                   | 默认值             | 说明          |
+| -------------------- | --------------- | ----------- |
+| `target_shape`       | (512, 512, 320) | 目标图像形状      |
+| `target_resolution`  | (0.4, 0.4, 0.4) | 目标分辨率 (mm)  |
+| `do_bias_correction` | True            | 是否进行N4偏置场校正 |
+| `do_skull_stripping` | True            | 是否进行颅骨去除    |
+
+### 直方图生成工具
+
+`generate_histogram.py` 用于统计一组NIfTI文件的直方图分布，可用于后续的直方图匹配。
+
+#### 使用方法
+
+```bash
+python scripts/generate_histogram.py \
+    --input path/to/nifti_directory/ \
+    --output histogram.pkl \
+    --bins 256 \
+    --range 0 256
+```
+
+#### 参数说明
+
+| 参数         | 默认值                      | 说明          |
+| ---------- | ------------------------ | ----------- |
+| `--input`  | 必需                       | 输入NIfTI文件目录 |
+| `--output` | input\_dir/histogram.pkl | 输出直方图文件路径   |
+| `--bins`   | 256                      | 直方图bin数量    |
+| `--range`  | 0 256                    | 直方图范围       |
+
+#### 输出内容
+
+直方图数据以pickle格式保存，包含：
+
+- `histogram`: 归一化的直方图数据
+- `bin_edges`: bin边界值
+- `mean`: 直方图均值
+- `std`: 直方图标准差
 
 ### 单文件推理
 
@@ -386,24 +475,47 @@ python main.py inference \
     --gpu 0
 ```
 
+### 带直方图匹配的推理
+
+推理时可以指定参考直方图，对输出结果进行直方图匹配，使生成的7T-like图像的强度分布更接近真实7T图像：
+
+```bash
+python scripts/inference.py \
+    --input path/to/3T_image.nii.gz \
+    --output path/to/output_7t_like.nii.gz \
+    --checkpoint checkpoints/student/best_model.pth \
+    --histogram path/to/histogram.pkl \
+    --mode file \
+    --gpu 0
+```
+
+直方图匹配功能会：
+
+1. 加载参考直方图
+2. 计算输出图像和参考直方图的累积分布函数
+3. 通过插值将输出图像的强度分布匹配到参考分布
+
 ### 推理输出
 
 推理会生成两个文件：
+
 - `*_7t_like.nii.gz`: 生成的7T-like图像
 - `*_uncertainty.nii.gz`: 不确定性图 (表示每个体素的置信度)
 
----
+***
 
 ## 模型评估
 
 ### 评估指标
 
 #### 图像质量指标
+
 - **BBC (Blood-to-Background Contrast)**: 血管-背景对比度
 - **CNR (Contrast-to-Noise Ratio)**: 对比度噪声比
 - **SNR (Signal-to-Noise Ratio)**: 信噪比
 
 #### 血管形态学指标
+
 - 小血管总体积偏移
 - 小血管总表面积偏移
 - 全脑血管总长度偏移
@@ -411,31 +523,7 @@ python main.py inference \
 - 最小血管平均半径偏移
 - 最大血管平均半径偏移
 
-### 评估脚本示例
-
-```python
-import numpy as np
-import nibabel as nib
-
-def calculate_mae(pred_path, gt_path):
-    pred = nib.load(pred_path).get_fdata()
-    gt = nib.load(gt_path).get_fdata()
-    return np.mean(np.abs(pred - gt))
-
-def calculate_psnr(pred_path, gt_path):
-    pred = nib.load(pred_path).get_fdata()
-    gt = nib.load(gt_path).get_fdata()
-    mse = np.mean((pred - gt) ** 2)
-    max_val = max(pred.max(), gt.max())
-    return 20 * np.log10(max_val / np.sqrt(mse))
-
-# 使用示例
-mae = calculate_mae('output_7t_like.nii.gz', 'ground_truth_7t.nii.gz')
-psnr = calculate_psnr('output_7t_like.nii.gz', 'ground_truth_7t.nii.gz')
-print(f"MAE: {mae:.4f}, PSNR: {psnr:.2f} dB")
-```
-
----
+***
 
 ## 项目结构
 
@@ -470,26 +558,7 @@ TOF_3T_2_7T_new/
 └── README.md                  # 说明文档
 ```
 
----
-
-## 常见问题
-
-### Q1: GPU内存不足
-- 减小 `batch_size`
-- 减小 `patch_size`
-- 使用梯度累积
-
-### Q2: 训练不稳定
-- 检查学习率设置
-- 确保数据归一化正确
-- 调整损失函数权重
-
-### Q3: 生成图像质量差
-- 检查数据配准质量
-- 增加训练轮数
-- 调整MIP厚度参数
-
----
+***
 
 ## 参考文献
 
@@ -505,7 +574,7 @@ TOF_3T_2_7T_new/
 }
 ```
 
----
+***
 
 ## 许可证
 

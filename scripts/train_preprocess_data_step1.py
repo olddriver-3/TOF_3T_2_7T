@@ -170,6 +170,8 @@ def process_subject(input_dir, subject_id, output_dir,
     img_3t = ants.image_read(file_3t)
     img_7t = ants.image_read(file_7t)
     
+
+
     if do_registration:
         img_7t = affine_registration(img_3t, img_7t)
     
@@ -246,7 +248,7 @@ def load_split_file(filepath):
 
 def main():
     parser = argparse.ArgumentParser(description='Preprocess NRRD TOF-MRA data')
-    parser.add_argument('--input_dir', type=str, default='D:\\cache\\data\\3T_only_n4_brain_extracted')
+    parser.add_argument('--input_dir', type=str, default='')
     parser.add_argument('--output_dir', type=str, default='data')
     parser.add_argument('--target_shape', type=int, nargs=3, default=[512, 512, 320])
     parser.add_argument('--target_resolution', type=float, nargs=3, default=[0.4, 0.4, 0.4])
@@ -261,7 +263,8 @@ def main():
                         help='Directory containing split_train.txt, split_val.txt, split_test.txt')
     
     args = parser.parse_args()
-    
+    ###
+
     print("=" * 60)
     print("TOF-MRA Data Preprocessing (ANTs)")
     print("=" * 60)
@@ -292,7 +295,7 @@ def main():
         print(f"Random split: train={len(train)}, val={len(val)}, test={len(test)}")
     
     processed, failed = 0, 0
-    
+
     for split_name, split_subjects in [('train', train), ('val', val), ('test', test)]:
         split_dir = os.path.join(args.output_dir, split_name)
         

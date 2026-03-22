@@ -61,25 +61,24 @@ def free_gpu_memory():
 
 DEFAULT_ALGORITHM1_PARAMS = {
     'denoise': True,
-    'denoise_window_size': 10,
-    'denoise_max_iterations': 1,
-    'sigmas': [1,5],
+    'denoise_window_size': 1,
+    'denoise_max_iterations': 0,
+    'sigmas': [1,3],
     'frangi_alpha': 0.5,
     'frangi_k': 500,
     'tau': 0.5,
-    'threshold': 0.5,
-    'min_skeleton_area': 20,
-    'region_threshold_low': 0.1,
-    'region_threshold_high': 1.0,
-    'region_max_iterations': 100000,
+    'threshold': 0.3,
+    'min_skeleton_area': 10,
+    'region_threshold_low': 0.4,
+    'region_threshold_high': 10,
+    'region_max_iterations': 1000000,
     'enhancement_method': 'improved',
-
     'verbose': True
 }
 
 DEFAULT_ALGORITHM2_PARAMS = {
-    'brain_threshold_low': 0.05,
-    'brain_threshold_high': 0.95,
+    'brain_threshold_low': 0.00,
+    'brain_threshold_high': 1,
     'verbose': True
 }
 
@@ -256,23 +255,15 @@ def compute_eigenvalues(hessian, use_gpu=None):
         注意：保留原始符号，仅按绝对值排序
     """
     gpu_enabled = USE_GPU if use_gpu is None else use_gpu
-    import tqdm
+    
     if gpu_enabled:
-        H, W, D = hessian.shape[:3]
-        eigenvalues_list = []
-
-        # 分批处理，每次只计算一个 (W, D, 3, 3) 切片
-        for h in tqdm(range(H), desc="计算特征值"):
-            slice_gpu = to_gpu(hessian[h])  # (W, D, 3, 3)
-            eig_gpu = cp.linalg.eigvals(slice_gpu)  # (W, D, 3)
-            idx_gpu = cp.argsort(cp.abs(eig_gpu), axis=-1)
-            eig_sorted_gpu = cp.take_along_axis(eig_gpu, idx_gpu, axis=-1)
-            eigenvalues_list.append(to_cpu(eig_sorted_gpu))
-            del slice_gpu, eig_gpu, idx_gpu, eig_sorted_gpu
-            free_gpu_memory()
-
-        result = np.stack(eigenvalues_list, axis=0)  # (H, W, D, 3)
-        del eigenvalues_list
+        hessian_gpu = to_gpu(hessian)
+        eigenvalues_gpu = cp.linalg.eigvalsh(hessian_gpu)
+        sorted_indices = cp.argsort(cp.abs(eigenvalues_gpu), axis=-1)
+        eigenvalues_gpu = cp.take_along_axis(eigenvalues_gpu, sorted_indices, axis=-1)
+        result = to_cpu(eigenvalues_gpu)
+        del hessian_gpu, eigenvalues_gpu, sorted_indices
+        free_gpu_memory()
         return result
     else:
         eigenvalues = np.linalg.eigvals(hessian)
@@ -790,77 +781,85 @@ def extract_skeleton(binary_image):
 # Module 5: Seed Point Detection Functions
 # ==============================================================================
 
-def detect_seed_points_from_skeleton(skeleton, min_area=20):
+def detect_seed_points_from_region(binary, enhanced_image, min_area=20):
     """
-    从骨架中自动检测种子点
+    从二值化图像的连通域中自动检测种子点
     
-    根据血管形态学特征，骨架连接区域的长度与脑血管长度几乎相同
+    根据血管形态学特征，连通区域的长度与脑血管长度几乎相同
     设置连接区域面积大于min_area作为候选区域
+    
+    优化逻辑：
+    1. 计算每个连通域内像素值的中位数
+    2. 选取一个值为中位数的点作为种子点
+    3. 返回种子点及其对应的中位数值
     
     Parameters:
     -----------
-    skeleton : ndarray
-        Binary skeleton image
+    binary : ndarray
+        Binary image (thresholded enhanced vessel image)
+    enhanced_image : ndarray
+        Enhanced vessel image for computing median values
     min_area : int
         Minimum area threshold for connected regions
         
     Returns:
     --------
-    seed_points : list
-        List of seed point coordinates
+    seed_info : list of tuples
+        List of (seed_point, median_value) tuples
+        seed_point: (z, y, x) coordinates
+        median_value: median intensity value of the connected region
     """
-    labeled_skeleton, num_regions = label(skeleton)
-    # print(f"Number of connected regions: {num_regions}")
-    seed_points = []
-     # 2. 批量计算区域属性
-    # 获取所有区域的面积
-    region_sizes = ndimage.sum(np.ones_like(skeleton), labeled_skeleton, range(1, num_regions + 1))
+    labeled_binary, num_regions = label(binary)
+    seed_info = []
     
-    # 批量计算质心（比手动计算快得多）
-    centers = ndimage.center_of_mass(skeleton, labeled_skeleton, range(1, num_regions + 1))
+    region_sizes = ndimage.sum(np.ones_like(binary), labeled_binary, range(1, num_regions + 1))
     
-    # 3. 筛选并收集种子点
     for region_id in range(1, num_regions + 1):
         if region_sizes[region_id - 1] >= min_area:
-            # centers返回的是(z, y, x)顺序
-            center_z, center_y, center_x = centers[region_id - 1]
-            seed_points.append((int(center_z), int(center_y), int(center_x)))
-    # for region_id in range(1, num_regions + 1):
-    #     region_mask = (labeled_skeleton == region_id)
-    #     region_area = np.sum(region_mask)
-        
-    #     if region_area >= min_area:
-    #         coords = np.where(region_mask)
-    #         center_z = int(np.mean(coords[0]))
-    #         center_y = int(np.mean(coords[1]))
-    #         center_x = int(np.mean(coords[2]))
+            region_mask = (labeled_binary == region_id)
+            region_values = enhanced_image[region_mask]
+            median_value = np.median(region_values)
             
-    #         seed_points.append((center_z, center_y, center_x))
+            median_diff = np.abs(region_values - median_value)
+            median_idx = np.argmin(median_diff)
+            
+            coords = np.where(region_mask)
+            seed_z = coords[0][median_idx]
+            seed_y = coords[1][median_idx]
+            seed_x = coords[2][median_idx]
+            
+            seed_info.append(((int(seed_z), int(seed_y), int(seed_x)), median_value))
     
-    return seed_points
+    return seed_info
 
 
 # ==============================================================================
 # Module 6: Region Growing Functions
 # ==============================================================================
 
-def region_growing_3d(image, seed_points, threshold_low=0.1, threshold_high=1.0, 
+def region_growing_3d(image, seed_info, threshold_low_multiplier=0.5, threshold_high_multiplier=5.0,
                       connectivity=26, max_iterations=100000):
     """
     3D区域生长算法
     
     基于图像灰度值的相似性，从种子点开始生长，合并相邻的相似像素
     
+    优化逻辑：
+    - 使用种子点对应连通域的中位数值作为基准
+    - 生长阈值 = 中位数值 × 倍数
+    - threshold_low = median_value × threshold_low_multiplier
+    - threshold_high = median_value × threshold_high_multiplier
+    
     Parameters:
     -----------
     image : ndarray
         Input image (enhanced vessel image)
-    seed_points : list
-        List of seed point coordinates
-    threshold_low : float
-        Lower intensity threshold for region growing
-    threshold_high : float
-        Upper intensity threshold for region growing
+    seed_info : list of tuples
+        List of (seed_point, median_value) tuples from detect_seed_points_from_skeleton
+    threshold_low_multiplier : float
+        Multiplier for lower intensity threshold (default: 0.5)
+    threshold_high_multiplier : float
+        Multiplier for upper intensity threshold (default: 5.0)
     connectivity : int
         Connectivity (6, 18, or 26)
     max_iterations : int
@@ -876,17 +875,19 @@ def region_growing_3d(image, seed_points, threshold_low=0.1, threshold_high=1.0,
     
     queue = deque()
     
-    for seed in seed_points:
-        if 0 <= seed[0] < image.shape[0] and \
-           0 <= seed[1] < image.shape[1] and \
-           0 <= seed[2] < image.shape[2]:
-            queue.append(seed)
-            visited[seed] = 1
+    for seed_point, median_value in seed_info:
+        if 0 <= seed_point[0] < image.shape[0] and \
+           0 <= seed_point[1] < image.shape[1] and \
+           0 <= seed_point[2] < image.shape[2]:
+            threshold_low = median_value * threshold_low_multiplier
+            threshold_high = median_value * threshold_high_multiplier
+            queue.append((seed_point, threshold_low, threshold_high))
+            visited[seed_point] = 1
     
     iterations = 0
     
     while queue and iterations < max_iterations:
-        current = queue.popleft()
+        current, threshold_low, threshold_high = queue.popleft()
         z, y, x = current
         
         if threshold_low <= image[z, y, x] <= threshold_high:
@@ -898,7 +899,7 @@ def region_growing_3d(image, seed_points, threshold_low=0.1, threshold_high=1.0,
                 if visited[nz, ny, nx] == 0:
                     if threshold_low <= image[nz, ny, nx] <= threshold_high:
                         visited[nz, ny, nx] = 1
-                        queue.append((nz, ny, nx))
+                        queue.append(((nz, ny, nx), threshold_low, threshold_high))
         
         iterations += 1
     
@@ -932,12 +933,12 @@ def algorithm1_cerebrovascular_segmentation(mra_image, params=None, use_gpu=None
         - 'denoise': bool, 是否应用去噪 (默认: True)
         - 'denoise_window_size': int, 去噪窗口大小 (默认: 5)
         - 'denoise_max_iterations': int, 去噪最大迭代次数 (默认: 1)
-        - 'sigmas': list, 多尺度增强的尺度参数 (默认: [2.0])
+        - 'sigmas': list, 多尺度增强的尺度参数 (默认: [2,5,10])
         - 'tau': float, 改进增强函数的截止阈值 (默认: 0.5)
         - 'threshold': float, 二值化阈值 (默认: 0.5)
         - 'min_skeleton_area': int, 骨架区域最小面积 (默认: 20)
-        - 'region_threshold_low': float, 区域生长下阈值 (默认: 0.1)
-        - 'region_threshold_high': float, 区域生长上阈值 (默认: 1.0)
+        - 'region_threshold_low': float, 区域生长下阈值倍数 (默认: 0.5，即中位数的0.5倍)
+        - 'region_threshold_high': float, 区域生长上阈值倍数 (默认: 5.0，即中位数的5倍)
         - 'region_max_iterations': int, 区域生长最大迭代次数 (默认: 100000)
         - 'enhancement_method': str, 增强方法 ('improved' 或 'frangi') (默认: 'improved')
         - 'frangi_alpha': float, Frangi参数alpha (默认: 0.5)
@@ -953,7 +954,8 @@ def algorithm1_cerebrovascular_segmentation(mra_image, params=None, use_gpu=None
         - 'segmentation': Binary segmentation result
         - 'enhanced': Enhanced vessel image
         - 'skeleton': Extracted skeleton
-        - 'seed_points': Detected seed points
+        - 'seed_points': Detected seed point coordinates (list of tuples)
+        - 'seed_info': List of (seed_point, median_value) tuples for each connected region
     """
     gpu_enabled = USE_GPU if use_gpu is None else use_gpu
     p = DEFAULT_ALGORITHM1_PARAMS.copy()
@@ -1004,19 +1006,19 @@ def algorithm1_cerebrovascular_segmentation(mra_image, params=None, use_gpu=None
     
     if p['verbose']:
         print("Step 5: Automatic seed point detection...")
-    seed_points = detect_seed_points_from_skeleton(skeleton, p['min_skeleton_area'])
+    seed_info = detect_seed_points_from_region(binary, enhanced, p['min_skeleton_area'])
     
     if p['verbose']:
-        print(f"  Detected {len(seed_points)} seed points")
+        print(f"  Detected {len(seed_info)} seed points")
     
     if p['verbose']:
         print("Step 6: Region growing segmentation...")
-    if len(seed_points) > 0:
+    if len(seed_info) > 0:
         segmentation = region_growing_3d(
             enhanced, 
-            seed_points, 
-            threshold_low=p['region_threshold_low'],
-            threshold_high=p['region_threshold_high'],
+            seed_info, 
+            threshold_low_multiplier=p['region_threshold_low'],
+            threshold_high_multiplier=p['region_threshold_high'],
             max_iterations=p['region_max_iterations']
         )
     else:
@@ -1026,11 +1028,13 @@ def algorithm1_cerebrovascular_segmentation(mra_image, params=None, use_gpu=None
         print("Segmentation complete!")
         print(f"  Total vessel voxels: {np.sum(segmentation)}")
     
+    seed_points = [sp for sp, _ in seed_info]
     return {
         'segmentation': segmentation,
         'enhanced': enhanced,
         'skeleton': skeleton,
-        'seed_points': seed_points
+        'seed_points': seed_points,
+        'seed_info': seed_info
     }
 
 
@@ -1207,7 +1211,7 @@ def compute_vessel_diameter(segmentation, skeleton, voxel_size=(0.5, 0.5, 0.5)):
     """
     计算血管平均直径
     
-    Da = 2 × voxel_size × ((vt / Lt) / (2π))^0.5
+    Da = 2 × voxel_size × (vt / Lt) / (2π)
     
     其中:
     vt = 血管总体积
@@ -1227,23 +1231,19 @@ def compute_vessel_diameter(segmentation, skeleton, voxel_size=(0.5, 0.5, 0.5)):
     diameter : float
         Average vessel diameter in mm
     """
-    # 体素体积
+    vt = np.sum(segmentation)
+    is_length = np.sum(skeleton)
+    
     voxel_volume = voxel_size[0] * voxel_size[1] * voxel_size[2]
-    # 平均体素边长
     voxel_length = np.mean(voxel_size)
     
-    # 血管总体积（单位：mm³）
-    vt = np.sum(segmentation) * voxel_volume
-    # 骨架像素总数
-    is_length = np.sum(skeleton)
-    # 血管总长度（单位：mm）
     lt = is_length * voxel_length
+    vt_mm3 = vt * voxel_volume
     
     if lt == 0:
-        return 0.0
+        return 0
     
-    # 按照公式计算平均直径
-    diameter = 2.0 * voxel_length * np.sqrt((vt / lt) / (2.0 * np.pi))
+    diameter = 2 * (vt_mm3 / lt) / (2 * np.pi)
     
     return diameter
 
@@ -1270,40 +1270,6 @@ def compute_vessel_length(skeleton, voxel_size=(0.5, 0.5, 0.5)):
     voxel_length = np.mean(voxel_size)
     
     return is_length * voxel_length
-
-
-def compute_branches_number(skeleton):
-    """
-    计算血管分支数
-    
-    通过计算骨架图中节点之间的连接数来获得分支数
-    
-    Parameters:
-    -----------
-    skeleton : ndarray
-        Vessel skeleton
-        
-    Returns:
-    --------
-    branches : int
-        Number of vessel branches
-    """
-    from scipy.ndimage import convolve
-    
-    kernel = np.ones((3, 3, 3))
-    kernel[1, 1, 1] = 0
-    
-    neighbor_count = convolve(skeleton.astype(np.int32), kernel, mode='constant')
-    
-    endpoints = (skeleton == 1) & (neighbor_count == 1)
-    branch_points = (skeleton == 1) & (neighbor_count >= 3)
-    
-    num_endpoints = np.sum(endpoints)
-    num_branch_points = np.sum(branch_points)
-    
-    branches = num_endpoints // 2 + num_branch_points
-    
-    return int(branches)
 
 
 # ==============================================================================
@@ -1371,7 +1337,6 @@ def run_complete_pipeline(mra_image,
     
     diameter = compute_vessel_diameter(vessel_region, skeleton, voxel_size)
     length = compute_vessel_length(skeleton, voxel_size)
-    branches = compute_branches_number(skeleton)
     
     if verbose:
         print(f"\nImage Quality Metrics:")
@@ -1381,7 +1346,7 @@ def run_complete_pipeline(mra_image,
         print(f"\nVessel Characteristics:")
         print(f"  Average Diameter: {diameter:.4f} mm")
         print(f"  Total Length: {length:.4f} mm")
-        print(f"  Number of Branches: {branches}")
+
     
     return {
         'segmentation': algo1_results,
@@ -1392,7 +1357,6 @@ def run_complete_pipeline(mra_image,
             'snr': snr,
             'diameter': diameter,
             'length': length,
-            'branches': branches
         }
     }
 

@@ -26,7 +26,7 @@ def normalize(data):
     data_min = data.min()
     data_max = data.max()
     if data_max - data_min > 0:
-        data = (data - data_min) / (data_max - data_min) * 255.0
+        data = (data - data_min) / (data_max - data_min)
     return data
 
 

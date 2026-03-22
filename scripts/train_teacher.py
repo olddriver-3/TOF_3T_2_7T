@@ -373,7 +373,7 @@ def main():
         train_dataset,
         batch_size=1,
         shuffle=True,
-        num_workers=config.num_workers,
+        num_workers=min(config.num_workers, os.cpu_count()),
         pin_memory=config.pin_memory
     )
     
@@ -381,7 +381,7 @@ def main():
         val_dataset,
         batch_size=1,
         shuffle=False,
-        num_workers=config.num_workers,
+        num_workers=min(config.num_workers, os.cpu_count()),
         pin_memory=config.pin_memory
     )
     

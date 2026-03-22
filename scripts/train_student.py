@@ -294,6 +294,13 @@ class StudentTrainer:
                 self.writer.add_scalar('Loss/mae', mae_loss.item(), self.global_step)
                 self.writer.add_scalar('Loss/kd', kd_loss.item(), self.global_step)
                 self.writer.add_scalar('Loss/recon', recon_loss.item(), self.global_step)
+                
+                for l in range(len(omega)):
+                    self.writer.add_scalar(f'Omega/layer_{l}', omega[l].item(), self.global_step)
+                
+                for m in range(phi.shape[0]):
+                    for l in range(phi.shape[1]):
+                        self.writer.add_scalar(f'Phi/dir_{m}_layer_{l}', phi[m, l].item(), self.global_step)
             
             if self.config.time_verbose:
                 postfix_dict = {
@@ -535,7 +542,7 @@ def main():
         train_dataset,
         batch_size=1,
         shuffle=True,
-        num_workers=config.num_workers,
+        num_workers=min(config.num_workers*4, os.cpu_count()),
         pin_memory=config.pin_memory
     )
     
@@ -543,7 +550,7 @@ def main():
         val_dataset,
         batch_size=1,
         shuffle=False,
-        num_workers=config.num_workers,
+        num_workers=min(config.num_workers*4, os.cpu_count()),
         pin_memory=config.pin_memory
     )
     
