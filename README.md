@@ -5,7 +5,6 @@
 ## 项目概述
 
 本项目实现了一个用于从3T TOF-MRA图像生成7T-like图像的深度学习模型。模型采用两阶段训练策略：
-
 1. **Stage 1**: 训练三个教师模型，分别学习轴向、冠状和矢状方向的MIP特征
 2. **Stage 2**: 通过知识蒸馏训练学生模型，融合多方向MIP信息
 
@@ -14,8 +13,8 @@
 ### 系统要求
 
 - Python 3.12
-- CUDA 12.5 (推荐)
-- GPU内存: 33GB以上
+- CUDA 12.6 (推荐)
+- GPU内存: 建议33GB以上 (支持多GPU训练)
 
 ### 安装依赖
 
@@ -25,20 +24,23 @@ pip install -r requirements.txt
 
 主要依赖包：
 
-- torch >= 1.9.0
-- nibabel >= 3.2.0 (NIfTI文件处理)
-- scipy >= 1.5.0
-- tensorboard >= 2.5.0
-- tqdm >= 4.50.0
+| 包名 | 版本要求 | 说明 |
+|------|----------|------|
+| torch | >= 2.7.0 | 深度学习框架 |
+| numpy | >= 2.0.0 | 数值计算 |
+| scipy | >= 1.15.0 | 科学计算 (形态学操作等) |
+| tensorboard | >= 2.20.0 | 训练可视化 |
+| tqdm | >= 4.67.0 | 进度条 |
+| scikit-image | >= 0.24.0 | 图像处理 (骨架提取) |
+| antspyx | >= 0.6.0 | 图像配准 (ANTs) |
 
-***
+---
 
 ## 数据准备
 
 ### 1. 数据格式要求
 
 支持的数据格式：
-
 - NIfTI格式 (`.nii` 或 `.nii.gz`) - 推荐格式
 - NRRD格式 (`.nrrd`) - 原始数据格式，需要预处理转换
 
@@ -53,7 +55,7 @@ pip install -r requirements.txt
 - 可选的偏置场校正 (N4ITK)
 - 可选的颅骨去除
 - 重采样到统一大小 (默认512×512×320)
-- 强度归一化到 \[0, 255]
+- 强度归一化到 [0, 255]
 - 自动划分训练/验证/测试集
 - 输出为NIfTI格式
 
@@ -78,18 +80,42 @@ python scripts/preprocess_data.py \
 
 #### 2.3 预处理参数说明
 
-| 参数                     | 默认值                | 说明         |
-| ---------------------- | ------------------ | ---------- |
-| `--input_dir`          | origin\_nrrd\_data | 输入NRRD数据目录 |
-| `--output_dir`         | data               | 输出目录       |
-| `--target_shape`       | 512 512 320        | 重采样目标大小    |
-| `--no_registration`    | -                  | 跳过刚性配准     |
-| `--no_bias_correction` | -                  | 跳过偏置场校正    |
-| `--skull_stripping`    | -                  | 启用颅骨去除     |
-| `--train_ratio`        | 0.7                | 训练集比例      |
-| `--val_ratio`          | 0.1                | 验证集比例      |
-| `--test_ratio`         | 0.2                | 测试集比例      |
-| `--seed`               | 42                 | 随机种子       |
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--input_dir` | origin_nrrd_data | 输入NRRD数据目录 |
+| `--output_dir` | data | 输出目录 |
+| `--target_shape` | 512 512 320 | 重采样目标大小 |
+| `--no_registration` | - | 跳过刚性配准 |
+| `--no_bias_correction` | - | 跳过偏置场校正 |
+| `--skull_stripping` | - | 启用颅骨去除 |
+| `--train_ratio` | 0.7 | 训练集比例 |
+| `--val_ratio` | 0.1 | 验证集比例 |
+| `--test_ratio` | 0.2 | 测试集比例 |
+| `--seed` | 42 | 随机种子 |
+| `--split_dir` | None | 预定义数据划分目录 |
+
+#### 使用预定义数据划分
+
+如果已有数据划分文件，可以使用 `--split_dir` 参数指定包含划分文件的目录：
+
+```bash
+python scripts/train_preprocess_data_step1.py \
+    --input_dir origin_nrrd_data \
+    --output_dir data \
+    --split_dir path/to/split_files
+```
+
+划分目录应包含以下文件：
+- `split_train.txt`: 训练集受试者ID列表
+- `split_val.txt`: 验证集受试者ID列表
+- `split_test.txt`: 测试集受试者ID列表
+
+每个文件格式为每行一个受试者ID，例如：
+```
+101
+102
+103
+```
 
 #### 2.4 原始数据目录结构要求
 
@@ -105,78 +131,6 @@ origin_nrrd_data/
 ```
 
 **注意**：文件名必须以 `_3T.nrrd` 或 `_7T.nrrd` 结尾（不区分大小写）。
-
-### 3. 手动预处理 (可选)
-
-如果需要手动进行预处理，请参考以下步骤：
-
-#### 3.1 图像配准
-
-将7T图像刚性配准到对应的3T图像：
-
-```python
-# 推荐使用ANTs或FSL进行配准
-# 示例使用ANTs:
-antsRegistrationSyN.sh -d 3 -f 3T_image.nii -m 7T_image.nii -o output_
-```
-
-#### 2.2 偏置场校正
-
-对图像进行偏置场校正：
-
-```python
-# 使用N4ITK (ITK/SimpleITK)
-import SimpleITK as sitk
-
-input_image = sitk.ReadImage("image.nii")
-corrector = sitk.N4BiasFieldCorrectionImageFilter()
-output_image = corrector.Execute(input_image)
-sitk.WriteImage(output_image, "corrected_image.nii")
-```
-
-#### 2.3 颅骨去除
-
-移除颅骨和非脑组织：
-
-```python
-# 推荐使用HD-BET或FSL BET
-# 使用HD-BET:
-# bet input.nii output.nii
-```
-
-#### 2.4 重采样和裁剪
-
-统一图像矩阵大小以减少计算成本：
-
-```python
-import nibabel as nib
-from scipy.ndimage import zoom
-
-# 目标矩阵大小: 512 × 512 × 320
-target_shape = (512, 512, 320)
-
-img = nib.load("image.nii")
-data = img.get_fdata()
-
-# 计算缩放因子
-zoom_factors = [t / s for t, s in zip(target_shape, data.shape)]
-resampled = zoom(data, zoom_factors, order=1)
-```
-
-#### 2.5 强度归一化
-
-将图像强度归一化到 \[0, 255] 范围：
-
-```python
-import numpy as np
-
-def normalize(data):
-    data_min = data.min()
-    data_max = data.max()
-    if data_max - data_min > 0:
-        data = (data - data_min) / (data_max - data_min) * 255.0
-    return data.astype(np.float32)
-```
 
 ### 3. 数据目录结构
 
@@ -210,14 +164,18 @@ data/
 ```
 
 **重要说明**：
-
 - 3T和7T目录中的文件名必须一一对应
 - 同一受试者的3T和7T图像文件名必须相同
 - 训练集、验证集、测试集的受试者不应重叠
 
-<br />
+### 4. 数据集划分建议
 
-### 4. 创建测试数据 (可选)
+参考论文的数据划分：
+- 训练集: 32对 3T-7T 图像
+- 验证集: 8对 3T-7T 图像
+- 测试集: 20对 3T-7T 图像
+
+### 5. 创建测试数据 (可选)
 
 如果需要测试代码，可以创建随机数据：
 
@@ -225,7 +183,66 @@ data/
 python setup.py --create_data
 ```
 
-***
+### 6. 精确配准 (可选)
+
+如果需要对已有的train/val/test数据进行更精确的配准，可以使用 `rereregister_data_step1_2.py` 脚本。该脚本基于血管增强进行SyN配准，可以获得更好的3T-7T图像对齐效果。
+
+#### 配准流程
+
+1. 读取原始3T和7T图像
+2. 对图像进行血管增强（使用多尺度血管增强滤波器）
+3. 保存增强后的图像
+4. 使用SyN方法将增强后的7T图像配准到增强后的3T图像
+5. 将配准得到的变形场应用到原始7T图像
+6. 保存配准后的结果
+
+#### 使用方法
+
+```bash
+python scripts/rereregister_data_step1_2.py \
+    --data_dir data \
+    --enhanced_dir data_enhanced \
+    --registered_dir data_registered
+```
+
+#### 参数说明
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--data_dir` | data | 输入数据目录 (包含train/val/test子目录) |
+| `--enhanced_dir` | data_enhanced | 血管增强图像输出目录 |
+| `--registered_dir` | data_registered | 配准后图像输出目录 |
+
+#### 输出目录结构
+
+```
+data_enhanced/
+├── train/
+│   ├── 3T/
+│   │   └── subject_001.nii.gz  # 血管增强后的3T图像
+│   └── 7T/
+│       └── subject_001.nii.gz  # 血管增强后的7T图像
+├── val/
+└── test/
+
+data_registered/
+├── train/
+│   ├── 3T/
+│   │   └── subject_001.nii.gz  # 原始3T图像 (复制)
+│   └── 7T/
+│       └── subject_001.nii.gz  # 配准后的7T图像
+├── val/
+└── test/
+```
+
+#### 血管增强参数
+
+脚本使用以下参数进行血管增强：
+- `sigmas=[1, 3]`: 多尺度高斯核参数
+- `tau=0.5`: 血管增强敏感度
+- `method='improved'`: 改进的Frangi滤波器
+
+---
 
 ## 模型训练
 
@@ -299,7 +316,6 @@ python main.py train_teacher --direction coronal --gpu 1
 #### 教师模型检查点
 
 训练完成后，检查点保存在：
-
 ```
 checkpoints/
 ├── teacher_axial/
@@ -336,7 +352,6 @@ python main.py train_student \
 #### 学生模型检查点
 
 训练完成后，检查点保存在：
-
 ```
 checkpoints/
 └── student/
@@ -372,7 +387,7 @@ tensorboard --logdir logs/teacher_sagittal
 tensorboard --logdir logs/student
 ```
 
-***
+---
 
 ## 模型推理
 
@@ -386,7 +401,7 @@ tensorboard --logdir logs/student
 2. 颅骨去除
 3. 重采样到目标分辨率
 4. 裁剪或填充到指定形状
-5. 强度归一化到 \[0, 255]
+5. 强度归一化到 [0, 255]
 
 #### 使用方法
 
@@ -414,12 +429,12 @@ processed, metadata = preprocess_3t_for_inference(
 
 #### 参数说明
 
-| 参数                   | 默认值             | 说明          |
-| -------------------- | --------------- | ----------- |
-| `target_shape`       | (512, 512, 320) | 目标图像形状      |
-| `target_resolution`  | (0.4, 0.4, 0.4) | 目标分辨率 (mm)  |
-| `do_bias_correction` | True            | 是否进行N4偏置场校正 |
-| `do_skull_stripping` | True            | 是否进行颅骨去除    |
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `target_shape` | (512, 512, 320) | 目标图像形状 |
+| `target_resolution` | (0.4, 0.4, 0.4) | 目标分辨率 (mm) |
+| `do_bias_correction` | True | 是否进行N4偏置场校正 |
+| `do_skull_stripping` | True | 是否进行颅骨去除 |
 
 ### 直方图生成工具
 
@@ -437,17 +452,16 @@ python scripts/generate_histogram.py \
 
 #### 参数说明
 
-| 参数         | 默认值                      | 说明          |
-| ---------- | ------------------------ | ----------- |
-| `--input`  | 必需                       | 输入NIfTI文件目录 |
-| `--output` | input\_dir/histogram.pkl | 输出直方图文件路径   |
-| `--bins`   | 256                      | 直方图bin数量    |
-| `--range`  | 0 256                    | 直方图范围       |
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--input` | 必需 | 输入NIfTI文件目录 |
+| `--output` | input_dir/histogram.pkl | 输出直方图文件路径 |
+| `--bins` | 256 | 直方图bin数量 |
+| `--range` | 0 256 | 直方图范围 |
 
 #### 输出内容
 
 直方图数据以pickle格式保存，包含：
-
 - `histogram`: 归一化的直方图数据
 - `bin_edges`: bin边界值
 - `mean`: 直方图均值
@@ -490,7 +504,6 @@ python scripts/inference.py \
 ```
 
 直方图匹配功能会：
-
 1. 加载参考直方图
 2. 计算输出图像和参考直方图的累积分布函数
 3. 通过插值将输出图像的强度分布匹配到参考分布
@@ -498,13 +511,14 @@ python scripts/inference.py \
 ### 推理输出
 
 推理会生成两个文件：
-
 - `*_7t_like.nii.gz`: 生成的7T-like图像
 - `*_uncertainty.nii.gz`: 不确定性图 (表示每个体素的置信度)
 
-***
+---
 
 ## 模型评估
+
+本项目使用 [automated_cerebrovascular_segmentation](https://github.com/olddriver-3/automated_cerebrovascular_segmentation) 项目进行评估，该工具提供完整的脑血管分割和质量评估功能。
 
 ### 评估指标
 
@@ -523,7 +537,11 @@ python scripts/inference.py \
 - 最小血管平均半径偏移
 - 最大血管平均半径偏移
 
-***
+### 使用方法
+
+请参考 [automated_cerebrovascular_segmentation](https://github.com/olddriver-3/automated_cerebrovascular_segmentation) 项目的文档了解详细的评估方法。
+
+---
 
 ## 项目结构
 
@@ -548,7 +566,11 @@ TOF_3T_2_7T_new/
 │   ├── __init__.py
 │   ├── train_teacher.py       # 教师模型训练
 │   ├── train_student.py       # 学生模型训练
-│   └── inference.py           # 推理脚本
+│   ├── inference.py           # 推理脚本 (支持直方图匹配)
+│   ├── inference_preprocess_pipeline.py  # 推理预处理Pipeline
+│   ├── generate_histogram.py  # 直方图生成工具
+│   ├── rereregister_data_step1_2.py      # 基于血管增强的精确配准
+│   └── preprocess_data.py     # 数据预处理
 ├── checkpoints/               # 模型检查点
 ├── logs/                      # TensorBoard日志
 ├── results/                   # 推理结果
@@ -558,7 +580,26 @@ TOF_3T_2_7T_new/
 └── README.md                  # 说明文档
 ```
 
-***
+---
+
+## 常见问题
+
+### Q1: GPU内存不足
+- 减小 `batch_size`
+- 减小 `patch_size`
+- 使用梯度累积
+
+### Q2: 训练不稳定
+- 检查学习率设置
+- 确保数据归一化正确
+- 调整损失函数权重
+
+### Q3: 生成图像质量差
+- 检查数据配准质量
+- 增加训练轮数
+- 调整MIP厚度参数
+
+---
 
 ## 参考文献
 
@@ -574,7 +615,7 @@ TOF_3T_2_7T_new/
 }
 ```
 
-***
+---
 
 ## 许可证
 
