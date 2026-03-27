@@ -1,0 +1,35 @@
+{
+  "total_files": 23,
+  "files_processed": [
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\106.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\107.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\115.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\117.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\118.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\120.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\132.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\134.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\135.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\14.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\18.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\41.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\51.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\56.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\63.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\65.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\69.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\76.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\82.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\84.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\87.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\94.nii.gz",
+    "D:\\project\\TOF_3T_2_7T_new\\data\\test\\7T\\95.nii.gz"
+  ],
+  "aggregate_metrics": {
+    "mean_bbc": 2.5428396722544795,
+    "mean_cnr": 1323.0151738705842,
+    "mean_snr": 1857.3666567595108,
+    "total_edges": 15375,
+    "total_edge_length_mm": 82567.39355942323
+  }
+}

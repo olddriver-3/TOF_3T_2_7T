@@ -1,3 +1,4 @@
+import antspynet
 """
 数据预处理脚本 - 将原始NRRD格式的3T和7T TOF-MRA数据预处理为训练所需的NIfTI格式
 
@@ -38,26 +39,10 @@ def bias_field_correction(image):
 
 
 def skull_stripping(image):
-    threshold = np.percentile(image.numpy()[image.numpy() > 0], 10)
-    mask = image > threshold
-    
-    mask_array = mask.numpy().astype(np.int32)
-    from scipy.ndimage import binary_fill_holes, label
-    mask_array = binary_fill_holes(mask_array)
-    
-    labeled, num_features = label(mask_array)
-    if num_features > 0:
-        sizes = [(labeled == i).sum() for i in range(1, num_features + 1)]
-        largest = np.argmax(sizes) + 1
-        mask_array = (labeled == largest).astype(np.float32)
-    
-    mask_img = ants.from_numpy(
-        mask_array,
-        spacing=image.spacing,
-        origin=image.origin,
-        direction=image.direction
-    )
-    return image * mask_img
+    brain_mask = antspynet.utilities.brain_extraction(image, modality='mra')
+    image = image * brain_mask
+    brain_mask = antspynet.utilities.brain_extraction(image, modality='mra')
+    return image * brain_mask
 
 
 def resample_to_resolution(image, target_resolution, target_shape):

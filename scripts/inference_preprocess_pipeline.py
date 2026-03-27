@@ -14,6 +14,7 @@
 import numpy as np
 from scipy.ndimage import binary_fill_holes, label
 import ants
+import antspynet
 
 
 class InferencePreprocessPipeline:
@@ -46,31 +47,14 @@ class InferencePreprocessPipeline:
         return image.numpy()
 
     def bias_field_correction(self, image):
-        mask = image > image.mean()
-        corrected = ants.n4_bias_field_correction(image, mask=mask, verbose=False)
+        corrected = ants.n4_bias_field_correction(image)
         return corrected
 
     def skull_stripping(self, image):
-        data = image.numpy()
-        threshold = np.percentile(data[data > 0], 10)
-        mask = image > threshold
-        
-        mask_array = mask.numpy().astype(np.int32)
-        mask_array = binary_fill_holes(mask_array)
-        
-        labeled, num_features = label(mask_array)
-        if num_features > 0:
-            sizes = [(labeled == i).sum() for i in range(1, num_features + 1)]
-            largest = np.argmax(sizes) + 1
-            mask_array = (labeled == largest).astype(np.float32)
-        
-        mask_img = ants.from_numpy(
-            mask_array,
-            spacing=image.spacing,
-            origin=image.origin,
-            direction=image.direction
-        )
-        return image * mask_img
+        brain_mask = antspynet.utilities.brain_extraction(image, modality='mra')
+        image = image * brain_mask
+        brain_mask = antspynet.utilities.brain_extraction(image, modality='mra')
+        return image * brain_mask
 
     def resample_and_pad_crop(self, image):
         resampled = ants.resample_image(

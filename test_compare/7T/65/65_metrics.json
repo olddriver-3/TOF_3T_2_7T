@@ -1,0 +1,31 @@
+{
+  "file_name": "65.nii.gz",
+  "image_shape": [
+    512,
+    512,
+    320
+  ],
+  "voxel_size_mm": [
+    0.4000000059604645,
+    0.4000000059604645,
+    0.4000000059604645
+  ],
+  "quality_metrics": {
+    "bbc": 2.181334972381592,
+    "cnr": 1423.494873046875,
+    "snr": 2076.074462890625
+  },
+  "vessel_metrics": {
+    "vessel_voxels": 180360,
+    "skeleton_voxels": 9420
+  },
+  "graph_metrics": {
+    "num_nodes": 1219,
+    "num_endpoints": 798,
+    "num_branch_points": 421,
+    "num_edges": 926,
+    "total_edge_length_mm": 4805.175661952927,
+    "avg_edge_length_mm": 5.189174580942696,
+    "avg_degree": 1.5192780968006563
+  }
+}
